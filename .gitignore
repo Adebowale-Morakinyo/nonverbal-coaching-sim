@@ -26,6 +26,23 @@ go.work.sum
 
 # env file
 .env
+.env.local
+
+# Node / Vite
+node_modules/
+dist/
+frontend/dist/
+.vite/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
 
 # Editor/IDE
 # .idea/
