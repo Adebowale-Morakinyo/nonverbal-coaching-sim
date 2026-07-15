@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: nonverbal_sim
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d nonverbal_sim"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # backend:
+  #   image: golang:1.22-alpine
+  #   working_dir: /app
+  #   command: go run cmd/server/main.go
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     DATABASE_URL: postgres://user:pass@postgres:5432/nonverbal_sim?sslmode=disable
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - ./backend:/app
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
+volumes:
+  postgres_data:
