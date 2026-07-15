@@ -44,7 +44,7 @@ export function SetupPage() {
 
     try {
       const session = await createSession({ name, interviewType, condition });
-      navigate(`/session/${session.id}`, {
+      navigate(`/session/${session.id}${isAdmin ? "?admin=1" : ""}`, {
         state: { session, participantName: name },
       });
     } catch (err) {
@@ -154,9 +154,10 @@ export function SetupPage() {
           ) : null}
 
           <button
-            className="group flex w-full items-center justify-center gap-2 rounded-input bg-primary px-4 py-3 text-sm font-bold text-white shadow-lg shadow-primary/20 hover:bg-primary-dim disabled:cursor-not-allowed disabled:opacity-60"
+            className="shimmer-button group flex w-full items-center justify-center gap-2 rounded-input bg-primary px-4 py-3 text-sm font-bold text-white shadow-lg shadow-primary/20 hover:bg-primary-dim hover:shadow-primary/30 disabled:cursor-not-allowed disabled:opacity-60"
             type="submit"
             disabled={loading}
+            aria-label="Start interview session"
           >
             {loading ? "Starting..." : "Start Session"}
             <ArrowRight

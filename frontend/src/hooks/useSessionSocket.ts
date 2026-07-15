@@ -18,34 +18,31 @@ export function useSessionSocket(
   initialTurns: SessionTurn[] = [],
 ) {
   const [messages, setMessages] = useState<Message[]>(() =>
-    initialTurns.map((turn) => ({
-      id: String(turn.id),
-      role: turn.role,
-      content: turn.content,
-    })),
+    turnsToMessages(initialTurns),
   );
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [facialData, setFacialData] = useState<FacialIndicators | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<
-    "connecting" | "connected" | "disconnected"
+    "connecting" | "connected" | "disconnected" | "failed"
   >("connecting");
+  const [connectionRun, setConnectionRun] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
-  const reconnectAttemptedRef = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setMessages(
-      initialTurns.map((turn) => ({
-        id: String(turn.id),
-        role: turn.role,
-        content: turn.content,
-      })),
-    );
+    setMessages(turnsToMessages(initialTurns));
   }, [initialTurns]);
 
   useEffect(() => {
     let closedByEffect = false;
 
     function connect() {
+      if (reconnectTimerRef.current) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+
       setConnectionStatus("connecting");
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       const socket = new WebSocket(
@@ -55,28 +52,29 @@ export function useSessionSocket(
 
       socket.onopen = () => {
         setConnectionStatus("connected");
-        reconnectAttemptedRef.current = false;
+        reconnectAttemptsRef.current = 0;
       };
 
       socket.onmessage = (event) => {
         const data = JSON.parse(event.data) as SocketMessage;
+
         if (data.type === "ai_response") {
           setIsAiTyping(false);
+          const id = `ai-${data.turn_index ?? crypto.randomUUID()}`;
           setMessages((current) => [
-            ...current,
-            {
-              id: `ai-${data.turn_index ?? crypto.randomUUID()}`,
-              role: "ai",
-              content: data.content,
-            },
+            ...current.filter((message) => message.id !== id),
+            { id, role: "ai", content: data.content },
           ]);
         }
+
         if (data.type === "session_ended") {
           setConnectionStatus("disconnected");
         }
+
         if (data.type === "facial_indicators") {
           setFacialData(data.data);
         }
+
         if (data.type === "error") {
           setIsAiTyping(false);
         }
@@ -86,20 +84,44 @@ export function useSessionSocket(
         socketRef.current = null;
         setConnectionStatus("disconnected");
         setIsAiTyping(false);
-        if (!closedByEffect && !reconnectAttemptedRef.current) {
-          reconnectAttemptedRef.current = true;
-          window.setTimeout(connect, 600);
+
+        if (!closedByEffect && reconnectAttemptsRef.current < 3) {
+          reconnectAttemptsRef.current += 1;
+          reconnectTimerRef.current = window.setTimeout(connect, 800);
+          return;
         }
+
+        if (!closedByEffect) {
+          setConnectionStatus("failed");
+        }
+      };
+
+      socket.onerror = () => {
+        setIsAiTyping(false);
       };
     }
 
+    reconnectAttemptsRef.current = 0;
     connect();
 
     return () => {
       closedByEffect = true;
+      if (reconnectTimerRef.current) {
+        window.clearTimeout(reconnectTimerRef.current);
+      }
       socketRef.current?.close();
     };
-  }, [sessionId]);
+  }, [connectionRun, sessionId]);
+
+  const reconnect = useCallback(() => {
+    reconnectAttemptsRef.current = 0;
+    setConnectionStatus("connecting");
+    if (socketRef.current) {
+      socketRef.current.close();
+      return;
+    }
+    setConnectionRun((value) => value + 1);
+  }, []);
 
   const sendTurn = useCallback((content: string) => {
     const trimmed = content.trim();
@@ -124,18 +146,7 @@ export function useSessionSocket(
       return;
     }
 
-    window.setTimeout(() => {
-      setIsAiTyping(false);
-      setMessages((current) => [
-        ...current,
-        {
-          id: `mock-ai-${crypto.randomUUID()}`,
-          role: "ai",
-          content:
-            "Thank you. Could you give one specific example and explain the outcome?",
-        },
-      ]);
-    }, 900);
+    setIsAiTyping(false);
   }, []);
 
   return {
@@ -144,5 +155,14 @@ export function useSessionSocket(
     sendTurn,
     facialData,
     connectionStatus,
+    reconnect,
   };
+}
+
+function turnsToMessages(turns: SessionTurn[]): Message[] {
+  return turns.map((turn) => ({
+    id: String(turn.id),
+    role: turn.role,
+    content: turn.content,
+  }));
 }

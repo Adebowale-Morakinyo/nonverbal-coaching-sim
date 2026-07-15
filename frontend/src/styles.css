@@ -48,6 +48,48 @@
       transform 200ms ease,
       box-shadow 200ms ease;
   }
+
+  button:active {
+    transform: scale(0.97);
+  }
+}
+
+@layer utilities {
+  .shimmer-button {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .shimmer-button::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    background: linear-gradient(
+      110deg,
+      transparent 0%,
+      rgb(255 255 255 / 18%) 45%,
+      transparent 62%
+    );
+    transform: translateX(-120%);
+    transition: transform 600ms ease;
+  }
+
+  .shimmer-button:hover::after {
+    transform: translateX(120%);
+  }
+
+  .score-ring {
+    animation: score-ring-fill 900ms ease forwards;
+  }
+
+  @keyframes score-ring-fill {
+    from {
+      stroke-dashoffset: var(--ring-circumference);
+    }
+    to {
+      stroke-dashoffset: var(--ring-offset);
+    }
+  }
 }
 
 @media print {

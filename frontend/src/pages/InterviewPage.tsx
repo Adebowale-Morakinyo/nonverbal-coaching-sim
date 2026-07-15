@@ -1,7 +1,12 @@
 import { motion } from "framer-motion";
-import { Bot, Mic, MicOff, Send, Square } from "lucide-react";
+import { Bot, Bug, Mic, MicOff, RefreshCw, Send, Square } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import clsx from "clsx";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { FacialOverlay } from "../components/FacialOverlay";
@@ -22,6 +27,8 @@ export function InterviewPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const isAdmin = searchParams.get("admin") === "1";
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const [session, setSession] = useState<Session | null>(
@@ -33,6 +40,7 @@ export function InterviewPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [ending, setEnding] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
   const timer = useTimer(true);
   const { error: cameraError } = useCamera(videoRef);
 
@@ -68,24 +76,9 @@ export function InterviewPage() {
     isReady: facialAnalysisReady,
     error: facialAnalysisError,
   } = useFacialAnalysis(videoRef, fullMultimodal);
-  const { messages, isAiTyping, sendTurn, connectionStatus } = useSessionSocket(
-    id,
-    turns,
-  );
-  const displayedMessages = useMemo(
-    () =>
-      messages.length
-        ? messages
-        : [
-            {
-              id: "welcome",
-              role: "ai" as const,
-              content:
-                "Welcome. Tell me about yourself and the role you are preparing for.",
-            },
-          ],
-    [messages],
-  );
+  const { messages, isAiTyping, sendTurn, connectionStatus, reconnect } =
+    useSessionSocket(id, turns);
+  const displayedMessages = useMemo(() => messages, [messages]);
 
   useEffect(() => {
     messageListRef.current?.scrollTo({
@@ -105,6 +98,22 @@ export function InterviewPage() {
 
     return () => window.clearInterval(interval);
   }, [fullMultimodal, id, indicators]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        setDebugOpen((value) => !value);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isAdmin]);
 
   function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -133,13 +142,58 @@ export function InterviewPage() {
     }
   }
 
+  if (connectionStatus === "connecting") {
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-6 text-text">
+        <div className="text-center">
+          <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-2 border-border border-t-primary" />
+          <h1 className="text-xl font-semibold">
+            Connecting to interviewer...
+          </h1>
+          <p className="mt-2 text-sm text-text-muted">
+            Preparing the live interview channel.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (connectionStatus === "failed") {
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-6 text-text">
+        <section className="max-w-md rounded-card border border-border bg-surface p-6 text-center shadow-2xl shadow-black/20">
+          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-danger/10 text-danger">
+            <RefreshCw size={22} />
+          </div>
+          <h1 className="text-xl font-semibold">Connection lost</h1>
+          <p className="mt-2 text-sm leading-6 text-text-muted">
+            The interviewer connection failed after several attempts. Check the
+            backend server and reconnect when ready.
+          </p>
+          <button
+            className="mt-6 rounded-input bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dim"
+            type="button"
+            onClick={reconnect}
+            aria-label="Reconnect to interviewer"
+          >
+            Reconnect
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-background p-4 text-text lg:p-6">
       {fullMultimodal && !facialAnalysisError ? (
         <FacialOverlay data={indicators} />
       ) : null}
       {fullMultimodal && facialAnalysisError ? (
-        <div className="absolute right-6 top-6 z-30 max-w-sm rounded-card border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning shadow-2xl shadow-black/30 backdrop-blur-xl">
+        <div
+          className="absolute right-6 top-6 z-30 max-w-sm rounded-card border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning shadow-2xl shadow-black/30 backdrop-blur-xl"
+          role="status"
+          aria-live="polite"
+        >
           Facial analysis unavailable — session continues without overlay
         </div>
       ) : null}
@@ -153,6 +207,7 @@ export function InterviewPage() {
               autoPlay
               muted
               playsInline
+              aria-label="Your camera feed"
             />
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(0,0,0,0.35))]" />
             <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-semibold text-text backdrop-blur">
@@ -205,6 +260,7 @@ export function InterviewPage() {
               className="text-sm font-medium text-text-muted hover:text-danger"
               type="button"
               onClick={() => setConfirmOpen(true)}
+              aria-label="End interview session"
             >
               End Session
             </button>
@@ -251,10 +307,12 @@ export function InterviewPage() {
                 onChange={(event) => setInput(event.target.value)}
                 placeholder="Type your answer..."
                 rows={1}
+                aria-label="Candidate answer"
               />
               <button
                 className="rounded-input bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary-dim"
                 type="submit"
+                aria-label="Send answer"
               >
                 <Send size={18} />
               </button>
@@ -284,6 +342,7 @@ export function InterviewPage() {
           className="inline-flex items-center gap-2 rounded-full border border-danger/40 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/10"
           type="button"
           onClick={() => setConfirmOpen(true)}
+          aria-label="End interview session"
         >
           <Square size={14} />
           End
@@ -298,6 +357,17 @@ export function InterviewPage() {
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => void handleEndSession()}
       />
+
+      {isAdmin ? (
+        <DebugPanel
+          open={debugOpen}
+          indicators={indicators}
+          connectionStatus={connectionStatus}
+          turnCount={displayedMessages.length}
+          sessionID={id}
+          onToggle={() => setDebugOpen((value) => !value)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -331,6 +401,76 @@ function MessageBubble({
         {content}
       </div>
     </motion.div>
+  );
+}
+
+function DebugPanel({
+  open,
+  indicators,
+  connectionStatus,
+  turnCount,
+  sessionID,
+  onToggle,
+}: {
+  open: boolean;
+  indicators: {
+    eyeContactRatio: number;
+    headStability: number;
+    facialActivity: number;
+  } | null;
+  connectionStatus: string;
+  turnCount: number;
+  sessionID: string;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="fixed bottom-4 left-4 z-40 rounded-card border border-border bg-surface/90 p-3 shadow-2xl shadow-black/30 backdrop-blur-xl">
+      <button
+        className="flex items-center gap-2 text-xs font-semibold text-text-muted hover:text-text"
+        type="button"
+        onClick={onToggle}
+        aria-label="Toggle debug panel"
+      >
+        <Bug size={15} />
+        Debug
+      </button>
+      {open ? (
+        <dl className="mt-3 grid min-w-72 gap-2 text-xs">
+          <div className="flex justify-between gap-4">
+            <dt className="text-text-muted">Session</dt>
+            <dd className="max-w-40 truncate font-mono text-text">
+              {sessionID}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-text-muted">WebSocket</dt>
+            <dd className="font-mono text-text">{connectionStatus}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-text-muted">Turns</dt>
+            <dd className="font-mono text-text">{turnCount}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-text-muted">Eye</dt>
+            <dd className="font-mono text-text">
+              {indicators?.eyeContactRatio.toFixed(3) ?? "null"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-text-muted">Head</dt>
+            <dd className="font-mono text-text">
+              {indicators?.headStability.toFixed(3) ?? "null"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-text-muted">Activity</dt>
+            <dd className="font-mono text-text">
+              {indicators?.facialActivity.toFixed(3) ?? "null"}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+    </div>
   );
 }
 

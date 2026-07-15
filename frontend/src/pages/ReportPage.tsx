@@ -1,4 +1,5 @@
 import { ArrowUpRight, Check, Download, RotateCcw } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import clsx from "clsx";
@@ -27,10 +28,12 @@ export function ReportPage() {
     "Participant";
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let active = true;
     async function loadReport() {
+      setError(null);
       try {
         const loaded = await getReport(id);
         if (active) {
@@ -49,7 +52,7 @@ export function ReportPage() {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, retryCount]);
 
   const createdAt = useMemo(() => {
     const value = report?.created_at ? new Date(report.created_at) : new Date();
@@ -77,6 +80,7 @@ export function ReportPage() {
             <Link
               className="rounded-input border border-border px-4 py-2 text-sm font-semibold text-text-muted hover:text-text"
               to="/"
+              aria-label="Practice again"
             >
               <RotateCcw className="mr-2 inline" size={16} />
               Practice Again
@@ -85,6 +89,7 @@ export function ReportPage() {
               className="rounded-input bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dim"
               type="button"
               onClick={() => window.print()}
+              aria-label="Download report"
             >
               <Download className="mr-2 inline" size={16} />
               Download Report
@@ -94,7 +99,15 @@ export function ReportPage() {
 
         {error ? (
           <div className="print-surface rounded-card border border-warning/30 bg-warning/10 p-6 text-warning">
-            {error}
+            <p>{error}</p>
+            <button
+              className="mt-4 rounded-input border border-warning/40 px-4 py-2 text-sm font-semibold text-warning hover:bg-warning/10"
+              type="button"
+              onClick={() => setRetryCount((value) => value + 1)}
+              aria-label="Retry report fetch"
+            >
+              Retry
+            </button>
           </div>
         ) : null}
 
@@ -172,11 +185,17 @@ function ScoreCard({
             r="38"
             stroke="currentColor"
             strokeWidth="8"
-            className="text-primary"
+            className="score-ring text-primary"
             fill="none"
             strokeDasharray={circumference}
-            strokeDashoffset={offset}
+            strokeDashoffset={circumference}
             strokeLinecap="round"
+            style={
+              {
+                "--ring-circumference": circumference,
+                "--ring-offset": offset,
+              } as CSSProperties
+            }
           />
         </svg>
         <span className="absolute inset-0 grid place-items-center text-3xl font-bold">

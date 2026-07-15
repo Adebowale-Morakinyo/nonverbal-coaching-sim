@@ -22,18 +22,30 @@ func TestIntegrationFullSessionLifecycle(t *testing.T) {
 		"I handled a difficult stakeholder by clarifying their goals.",
 		"I measured success through improved delivery time.",
 		"I would communicate risks earlier next time.",
+		"I kept the team aligned with weekly updates.",
+		"The final result was delivered two weeks early.",
 	} {
 		_ = postJSON[map[string]any](t, server.URL+"/api/sessions/"+sessionID.String()+"/turns", map[string]any{"content": content}, http.StatusOK)
 	}
 
 	report := postJSON[session.Report](t, server.URL+"/api/sessions/"+sessionID.String()+"/end", map[string]any{}, http.StatusOK)
-	var verbal map[string]any
+	var verbal map[string]struct {
+		Score   int    `json:"score"`
+		Comment string `json:"comment"`
+	}
 	if err := json.Unmarshal(report.VerbalAnalysis, &verbal); err != nil {
 		t.Fatalf("unmarshal verbal report: %v", err)
 	}
 	for _, key := range []string{"answer_structure", "reasoning_clarity", "use_of_examples", "communication_quality"} {
-		if _, ok := verbal[key]; !ok {
+		dimension, ok := verbal[key]
+		if !ok {
 			t.Fatalf("missing verbal dimension %q", key)
+		}
+		if dimension.Score < 1 || dimension.Score > 5 {
+			t.Fatalf("score for %q out of range: %d", key, dimension.Score)
+		}
+		if dimension.Comment == "" {
+			t.Fatalf("missing comment for %q", key)
 		}
 	}
 }

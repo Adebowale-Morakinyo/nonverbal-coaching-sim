@@ -269,6 +269,10 @@ func (s *Server) websocket(w http.ResponseWriter, req *http.Request) {
 	hub.Register(conn)
 	defer hub.Unregister(conn)
 
+	if err := s.sendInitialQuestion(req.Context(), conn, sessionID); err != nil {
+		_ = conn.WriteJSON(map[string]string{"type": "error", "error": err.Error()})
+	}
+
 	for {
 		var message struct {
 			Type    string `json:"type"`
@@ -306,6 +310,30 @@ func (s *Server) websocket(w http.ResponseWriter, req *http.Request) {
 			_ = conn.WriteJSON(map[string]string{"type": "error", "error": "unsupported message type"})
 		}
 	}
+}
+
+func (s *Server) sendInitialQuestion(ctx context.Context, conn *websocket.Conn, sessionID uuid.UUID) error {
+	found, err := s.repo.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	turns, err := s.repo.ListTurns(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if len(turns) > 0 {
+		return nil
+	}
+
+	aiResponse, err := s.llm.InterviewResponse(ctx, found.InterviewType, nil)
+	if err != nil {
+		return err
+	}
+	aiTurn, err := s.repo.AddTurn(ctx, sessionID, session.RoleAI, aiResponse)
+	if err != nil {
+		return err
+	}
+	return conn.WriteJSON(map[string]any{"type": "ai_response", "content": aiResponse, "turn_index": aiTurn.ID})
 }
 
 func (s *Server) processCandidateTurn(ctx context.Context, sessionID uuid.UUID, content string) (string, int, error) {

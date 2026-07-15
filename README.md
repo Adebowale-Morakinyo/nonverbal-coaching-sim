@@ -1,112 +1,77 @@
-# Nonverbal Coaching Sim
+# Nonverbal Coaching Simulator
 
-Full-stack scaffold for a nonverbal communication coaching simulator.
+## Overview
 
-## Project layout
+The Nonverbal Coaching Simulator is a full-stack AI interview practice tool for candidate-facing research demos. It supports a verbal-only condition and a full multimodal condition that adds live facial-analysis indicators and stores nonverbal snapshots for post-session reporting.
 
-```text
-backend/              Go API server
-frontend/             React + TypeScript Vite app
-docker-compose.yml    Postgres + backend dev services
-.env.example          Local environment template
-```
+## Tech Stack
 
-## Prerequisites
+- Backend: Go 1.22, pgx/v5, gorilla/websocket, OpenRouter, PostgreSQL
+- Frontend: React, TypeScript, Vite, Tailwind CSS, Framer Motion, MediaPipe Tasks Vision
+- Testing: Go smoke/integration tests, Playwright e2e tests, frontend smoke script
+- Local services: Docker Compose Postgres, or a local PostgreSQL instance
 
-- Go 1.22+
-- Node.js 20+
-- Docker and Docker Compose
-
-## Backend
-
-```bash
-cd backend
-make migrate
-make dev
-```
-
-The server listens on `http://localhost:8080` by default.
-
-Useful endpoints:
-
-- `GET /healthz`
-- `POST /api/sessions`
-- `GET /api/sessions/{id}`
-- `POST /api/sessions/{id}/turns`
-- `POST /api/sessions/{id}/end`
-- `POST /api/sessions/{id}/snapshot`
-- `GET /api/sessions/{id}/report`
-- `GET /ws/{id}`
-
-Backend checks:
-
-```bash
-cd backend
-make test
-make smoke
-go test -tags integration ./...
-```
-
-## Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The app runs at `http://localhost:5173` and proxies API requests to the Go server.
-
-If your backend is not on `8080`, set `VITE_API_PROXY_TARGET` when starting Vite:
-
-```bash
-VITE_API_PROXY_TARGET=http://localhost:18080 npm run dev
-```
-
-## Docker development
+## Quick Start
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose up -d postgres
+cd backend && make migrate
+cd backend && make dev
+cd frontend && npm install && npm run dev
 ```
 
-This starts Postgres and the backend server. Run the frontend separately with `npm run dev`.
+Open `http://localhost:5173`.
 
-## Quality checks
+If you use an existing local Postgres instance, set `DATABASE_URL` in the root `.env` before running migrations. The root `.env` is canonical: backend commands load `../.env`, and Vite loads the same file via `envDir`.
 
-Run all formatting, linting, tests, and frontend build checks from the repo root:
+## Environment Variables
 
-```bash
-make check
+```env
+DATABASE_URL=postgres://user:pass@localhost:5432/nonverbal_sim?sslmode=disable
+OPENROUTER_API_KEY=your_key_here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=anthropic/claude-sonnet-4-5
+PORT=8080
+ALLOWED_ORIGINS=http://localhost:5173
+VITE_API_PROXY_TARGET=http://localhost:8080
 ```
 
-Individual commands are available too:
+## Running Tests
+
+Backend:
 
 ```bash
-make format
-make lint
+cd backend
+make smoke
 make test
+go test -tags integration ./...
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm run smoke
+npm run e2e
+npm run lint
+npm run build
+```
+
+All project checks:
+
+```bash
+make test-all
 make build
 ```
 
-To run these checks automatically before every commit, install the local Git hook:
+Install Playwright browser binaries if needed:
 
 ```bash
-make install-hooks
+cd frontend
+npx playwright install chromium
 ```
 
-## Environment
+## Research Context
 
-Copy `.env.example` to `.env` and fill in values as needed.
-
-The root `.env` is the canonical environment file. Backend commands run from
-`backend/` load `../.env`, and the frontend Vite dev server loads the same root
-file via `envDir`.
-
-- `PORT`: backend HTTP port
-- `DATABASE_URL`: PostgreSQL connection string
-- `OPENROUTER_API_KEY`: API key for OpenRouter-backed coaching responses
-- `OPENROUTER_BASE_URL`: OpenRouter API base URL
-- `LLM_MODEL`: OpenRouter model name
-- `ALLOWED_ORIGINS`: comma-separated browser origins allowed by the backend
-- `VITE_API_PROXY_TARGET`: frontend dev proxy target
+This prototype supports a final-year research study comparing verbal-only AI interview preparation with a multimodal condition that includes nonverbal feedback. The goal is to evaluate whether live nonverbal indicators and post-session summaries improve candidate confidence and interview performance awareness.

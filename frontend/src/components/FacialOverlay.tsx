@@ -15,7 +15,11 @@ export function FacialOverlay({ data }: FacialOverlayProps) {
   ];
 
   return (
-    <div className="absolute right-6 top-6 z-30 w-80 rounded-card border border-white/10 bg-surface/70 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
+    <div
+      className="absolute right-6 top-6 z-30 w-80 rounded-card border border-white/10 bg-surface/70 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl"
+      role="status"
+      aria-live="polite"
+    >
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-text">Facial Overlay</p>
