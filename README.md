@@ -21,7 +21,9 @@ docker-compose.yml    Postgres + backend dev services
 
 ```bash
 cd backend
-go run ./cmd/server
+cp ../.env.example .env
+make migrate
+make dev
 ```
 
 The server listens on `http://localhost:8080` by default.
@@ -31,6 +33,20 @@ Useful endpoints:
 - `GET /healthz`
 - `POST /api/sessions`
 - `GET /api/sessions/{id}`
+- `POST /api/sessions/{id}/turns`
+- `POST /api/sessions/{id}/end`
+- `POST /api/sessions/{id}/snapshot`
+- `GET /api/sessions/{id}/report`
+- `GET /ws/{id}`
+
+Backend checks:
+
+```bash
+cd backend
+make test
+make smoke
+go test -tags integration ./...
+```
 
 ## Frontend
 
@@ -88,4 +104,6 @@ Copy `.env.example` to `.env` and fill in values as needed.
 - `DATABASE_URL`: PostgreSQL connection string
 - `OPENROUTER_API_KEY`: API key for OpenRouter-backed coaching responses
 - `OPENROUTER_BASE_URL`: OpenRouter API base URL
+- `LLM_MODEL`: OpenRouter model name
+- `ALLOWED_ORIGINS`: comma-separated browser origins allowed by the backend
 - `VITE_API_PROXY_TARGET`: frontend dev proxy target
