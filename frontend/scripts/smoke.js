@@ -3,10 +3,18 @@ import { resolve } from "node:path";
 
 loadRootEnv();
 
-const API_BASE =
+const API_BASE = normalizeLoopback(
   process.env.API_BASE_URL ??
-  process.env.VITE_API_PROXY_TARGET ??
-  "http://localhost:8080";
+    process.env.VITE_API_PROXY_TARGET ??
+    "http://127.0.0.1:8080",
+);
+const FRONTEND_BASE = normalizeLoopback(
+  process.env.FRONTEND_BASE_URL ?? "http://127.0.0.1:5173",
+);
+
+function normalizeLoopback(url) {
+  return url.replace("://localhost", "://127.0.0.1");
+}
 
 function loadRootEnv() {
   try {
@@ -70,3 +78,14 @@ await check("create session returns UUID", async () => {
     throw new Error(`Expected UUID id, got ${JSON.stringify(body)}`);
   }
 });
+
+await check("frontend page loads", async () => {
+  const response = await fetch(FRONTEND_BASE);
+  if (response.status !== 200) {
+    throw new Error(`Expected 200 from frontend, got ${response.status}`);
+  }
+});
+
+console.log(
+  "MANUAL: confirm MediaPipe loads in browser by starting a full_multimodal session and checking window.__mediapipe_loaded === true after worker init.",
+);

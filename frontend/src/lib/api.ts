@@ -21,7 +21,7 @@ export type Session = {
 };
 
 export type FacialIndicators = {
-  eyeContact: number;
+  eyeContactRatio: number;
   headStability: number;
   facialActivity: number;
 };
@@ -94,7 +94,7 @@ export async function sendSnapshot(id: string, indicators: FacialIndicators) {
   await request<void>(`/api/sessions/${id}/snapshot`, {
     method: "POST",
     body: JSON.stringify({
-      eye_contact_ratio: indicators.eyeContact,
+      eye_contact_ratio: indicators.eyeContactRatio,
       head_stability: indicators.headStability,
       facial_activity: indicators.facialActivity,
     }),

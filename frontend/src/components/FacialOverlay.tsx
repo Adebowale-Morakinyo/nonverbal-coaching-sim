@@ -9,7 +9,7 @@ type FacialOverlayProps = {
 export function FacialOverlay({ data }: FacialOverlayProps) {
   const [collapsed, setCollapsed] = useState(false);
   const indicators = [
-    { label: "Eye Contact", value: data?.eyeContact, icon: Eye },
+    { label: "Eye Contact", value: data?.eyeContactRatio, icon: Eye },
     { label: "Head Stability", value: data?.headStability, icon: Gauge },
     { label: "Expressiveness", value: data?.facialActivity, icon: Sparkles },
   ];

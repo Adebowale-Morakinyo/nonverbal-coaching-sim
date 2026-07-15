@@ -63,7 +63,11 @@ export function InterviewPage() {
   }, [id]);
 
   const fullMultimodal = session?.condition === "full_multimodal";
-  const indicators = useFacialAnalysis(fullMultimodal);
+  const {
+    indicators,
+    isReady: facialAnalysisReady,
+    error: facialAnalysisError,
+  } = useFacialAnalysis(videoRef, fullMultimodal);
   const { messages, isAiTyping, sendTurn, connectionStatus } = useSessionSocket(
     id,
     turns,
@@ -131,7 +135,14 @@ export function InterviewPage() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-background p-4 text-text lg:p-6">
-      {fullMultimodal ? <FacialOverlay data={indicators} /> : null}
+      {fullMultimodal && !facialAnalysisError ? (
+        <FacialOverlay data={indicators} />
+      ) : null}
+      {fullMultimodal && facialAnalysisError ? (
+        <div className="absolute right-6 top-6 z-30 max-w-sm rounded-card border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning shadow-2xl shadow-black/30 backdrop-blur-xl">
+          Facial analysis unavailable — session continues without overlay
+        </div>
+      ) : null}
 
       <div className="grid h-[calc(100vh-96px)] gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <section className="rounded-card border border-border bg-surface p-4 shadow-2xl shadow-black/20">
@@ -163,6 +174,17 @@ export function InterviewPage() {
               {connectionStatus}
             </div>
           </div>
+
+          {fullMultimodal ? (
+            <p className="mt-3 text-xs text-text-muted">
+              Facial analysis{" "}
+              {facialAnalysisError
+                ? "unavailable"
+                : facialAnalysisReady
+                  ? "live"
+                  : "loading"}
+            </p>
+          ) : null}
 
           {cameraError ? (
             <p className="mt-4 rounded-input border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
