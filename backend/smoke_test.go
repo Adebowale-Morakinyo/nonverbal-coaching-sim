@@ -71,7 +71,7 @@ func TestSmokeWebSocketTurnExchange(t *testing.T) {
 }
 
 func TestSmokeLLMClientReturnsNonEmptyString(t *testing.T) {
-	_ = godotenv.Load()
+	_ = godotenv.Load("../.env", ".env")
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" || apiKey == "your_key_here" {
 		t.Skip("OPENROUTER_API_KEY is not configured")

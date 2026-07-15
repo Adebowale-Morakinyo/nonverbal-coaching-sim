@@ -75,6 +75,7 @@ func NewRouter(config Config) http.Handler {
 }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("GET /health", s.health)
 	s.mux.HandleFunc("GET /healthz", s.health)
 	s.mux.HandleFunc("POST /api/sessions", s.createSession)
 	s.mux.HandleFunc("GET /api/sessions/{id}", s.getSession)

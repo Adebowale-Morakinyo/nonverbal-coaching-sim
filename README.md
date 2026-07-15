@@ -21,7 +21,6 @@ docker-compose.yml    Postgres + backend dev services
 
 ```bash
 cd backend
-cp ../.env.example .env
 make migrate
 make dev
 ```
@@ -99,6 +98,10 @@ make install-hooks
 ## Environment
 
 Copy `.env.example` to `.env` and fill in values as needed.
+
+The root `.env` is the canonical environment file. Backend commands run from
+`backend/` load `../.env`, and the frontend Vite dev server loads the same root
+file via `envDir`.
 
 - `PORT`: backend HTTP port
 - `DATABASE_URL`: PostgreSQL connection string

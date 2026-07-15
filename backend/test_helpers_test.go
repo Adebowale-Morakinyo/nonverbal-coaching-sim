@@ -43,7 +43,7 @@ func (fakeLLM) Complete(context.Context, string, []llm.Message) (string, error) 
 
 func testDatabase(t *testing.T) (*pgxpool.Pool, *db.Repository) {
 	t.Helper()
-	_ = godotenv.Load()
+	_ = godotenv.Load("../.env", ".env")
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("DATABASE_URL is not set")
