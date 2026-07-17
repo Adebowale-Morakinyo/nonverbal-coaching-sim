@@ -21,6 +21,10 @@ export function useSessionSocket(
     turnsToMessages(initialTurns),
   );
   const [isAiTyping, setIsAiTyping] = useState(false);
+  const [latestAIResponse, setLatestAIResponse] = useState<Message | null>(
+    null,
+  );
+  const [lastError, setLastError] = useState<string | null>(null);
   const [facialData, setFacialData] = useState<FacialIndicators | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<
     "connecting" | "connected" | "disconnected" | "failed"
@@ -52,6 +56,7 @@ export function useSessionSocket(
 
       socket.onopen = () => {
         setConnectionStatus("connected");
+        setLastError(null);
         reconnectAttemptsRef.current = 0;
       };
 
@@ -60,11 +65,13 @@ export function useSessionSocket(
 
         if (data.type === "ai_response") {
           setIsAiTyping(false);
+          setLastError(null);
           const id = `ai-${data.turn_index ?? crypto.randomUUID()}`;
           setMessages((current) => [
             ...current.filter((message) => message.id !== id),
             { id, role: "ai", content: data.content },
           ]);
+          setLatestAIResponse({ id, role: "ai", content: data.content });
         }
 
         if (data.type === "session_ended") {
@@ -77,6 +84,7 @@ export function useSessionSocket(
 
         if (data.type === "error") {
           setIsAiTyping(false);
+          setLastError(data.error);
         }
       };
 
@@ -156,6 +164,8 @@ export function useSessionSocket(
     facialData,
     connectionStatus,
     reconnect,
+    latestAIResponse,
+    lastError,
   };
 }
 

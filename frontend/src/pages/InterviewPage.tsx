@@ -1,6 +1,13 @@
 import { motion } from "framer-motion";
 import { Bot, Bug, Mic, MicOff, RefreshCw, Send, Square } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   useLocation,
   useNavigate,
@@ -11,7 +18,9 @@ import clsx from "clsx";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { FacialOverlay } from "../components/FacialOverlay";
 import { useCamera } from "../hooks/useCamera";
+import { useElevenLabsSpeech } from "../hooks/useElevenLabsSpeech";
 import { useFacialAnalysis } from "../hooks/useFacialAnalysis";
+import { useSpeechInput } from "../hooks/useSpeechInput";
 import { useSessionSocket } from "../hooks/useSessionSocket";
 import { useTimer } from "../hooks/useTimer";
 import {
@@ -31,16 +40,22 @@ export function InterviewPage() {
   const isAdmin = searchParams.get("admin") === "1";
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
+  const answerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [session, setSession] = useState<Session | null>(
     (location.state as { session?: Session } | null)?.session ?? null,
   );
   const [turns, setTurns] = useState<SessionTurn[]>([]);
   const [input, setInput] = useState("");
-  const [micActive, setMicActive] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [ending, setEnding] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [voiceToast, setVoiceToast] = useState<string | null>(null);
+  const [pendingVoiceSubmit, setPendingVoiceSubmit] = useState(false);
+  const spokenResponseIDRef = useRef<string | null>(null);
+  const wasSpeakingRef = useRef(false);
+  const inputRef = useRef("");
+  const voiceSubmitTimeoutRef = useRef<number | null>(null);
   const timer = useTimer(true);
   const { error: cameraError } = useCamera(videoRef);
 
@@ -76,9 +91,55 @@ export function InterviewPage() {
     isReady: facialAnalysisReady,
     error: facialAnalysisError,
   } = useFacialAnalysis(videoRef, fullMultimodal);
-  const { messages, isAiTyping, sendTurn, connectionStatus, reconnect } =
-    useSessionSocket(id, turns);
+  const {
+    messages,
+    isAiTyping,
+    sendTurn,
+    connectionStatus,
+    reconnect,
+    latestAIResponse,
+    lastError: socketError,
+  } = useSessionSocket(id, turns);
+  const { speak, isSpeaking } = useElevenLabsSpeech();
+  const queueVoiceTranscript = useCallback(
+    (transcript: string) => {
+      if (!transcript.trim()) {
+        return;
+      }
+
+      setInput(transcript);
+      inputRef.current = transcript;
+      setPendingVoiceSubmit(true);
+
+      if (voiceSubmitTimeoutRef.current) {
+        window.clearTimeout(voiceSubmitTimeoutRef.current);
+      }
+
+      voiceSubmitTimeoutRef.current = window.setTimeout(() => {
+        const answer = inputRef.current.trim();
+        setPendingVoiceSubmit(false);
+        voiceSubmitTimeoutRef.current = null;
+        if (answer) {
+          sendTurn(answer);
+          setInput("");
+          inputRef.current = "";
+        }
+      }, 1500);
+    },
+    [sendTurn],
+  );
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    isAvailable: speechInputAvailable,
+    error: speechInputError,
+  } = useSpeechInput(queueVoiceTranscript);
   const displayedMessages = useMemo(() => messages, [messages]);
+
+  useEffect(() => {
+    inputRef.current = input;
+  }, [input]);
 
   useEffect(() => {
     messageListRef.current?.scrollTo({
@@ -115,13 +176,84 @@ export function InterviewPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isAdmin]);
 
+  useEffect(() => {
+    if (
+      !latestAIResponse ||
+      spokenResponseIDRef.current === latestAIResponse.id
+    ) {
+      return;
+    }
+
+    spokenResponseIDRef.current = latestAIResponse.id;
+    void speak(latestAIResponse.content);
+  }, [latestAIResponse, speak]);
+
+  useEffect(() => {
+    if (wasSpeakingRef.current && !isSpeaking) {
+      answerInputRef.current?.focus();
+    }
+    wasSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  useEffect(() => {
+    if (!voiceToast) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setVoiceToast(null), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [voiceToast]);
+
+  useEffect(() => {
+    if (speechInputError) {
+      setVoiceToast(speechInputError);
+    }
+  }, [speechInputError]);
+
+  useEffect(() => {
+    return () => {
+      if (voiceSubmitTimeoutRef.current) {
+        window.clearTimeout(voiceSubmitTimeoutRef.current);
+      }
+    };
+  }, []);
+
   function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!input.trim()) {
       return;
     }
+    if (voiceSubmitTimeoutRef.current) {
+      window.clearTimeout(voiceSubmitTimeoutRef.current);
+      voiceSubmitTimeoutRef.current = null;
+    }
+    setPendingVoiceSubmit(false);
     sendTurn(input);
     setInput("");
+    inputRef.current = "";
+  }
+
+  function handleVoiceToggle() {
+    if (isSpeaking || !speechInputAvailable) {
+      if (!speechInputAvailable) {
+        setVoiceToast("Voice input unavailable — type your answer");
+      }
+      return;
+    }
+
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }
+
+  function cancelVoiceSubmit() {
+    if (voiceSubmitTimeoutRef.current) {
+      window.clearTimeout(voiceSubmitTimeoutRef.current);
+      voiceSubmitTimeoutRef.current = null;
+    }
+    setPendingVoiceSubmit(false);
   }
 
   async function handleEndSession() {
@@ -195,6 +327,15 @@ export function InterviewPage() {
           aria-live="polite"
         >
           Facial analysis unavailable — session continues without overlay
+        </div>
+      ) : null}
+      {voiceToast ? (
+        <div
+          className="absolute left-1/2 top-6 z-40 -translate-x-1/2 rounded-card border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning shadow-2xl shadow-black/30 backdrop-blur-xl"
+          role="status"
+          aria-live="polite"
+        >
+          {voiceToast}
         </div>
       ) : null}
 
@@ -271,6 +412,25 @@ export function InterviewPage() {
               {loadError}. Visual preview is using local state.
             </p>
           ) : null}
+          {isSpeaking ? (
+            <div
+              className="mx-5 mt-4 inline-flex w-fit items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+              AI speaking...
+            </div>
+          ) : null}
+          {socketError ? (
+            <div
+              className="mx-5 mt-4 rounded-input border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+              role="status"
+              aria-live="polite"
+            >
+              {socketError}
+            </div>
+          ) : null}
 
           <div
             ref={messageListRef}
@@ -281,6 +441,11 @@ export function InterviewPage() {
                 key={message.id}
                 role={message.role}
                 content={message.content}
+                isSpeaking={
+                  isSpeaking &&
+                  message.role === "ai" &&
+                  message.id === latestAIResponse?.id
+                }
               />
             ))}
             {isAiTyping ? <TypingIndicator /> : null}
@@ -290,18 +455,36 @@ export function InterviewPage() {
             <div className="flex items-end gap-3 rounded-card border border-border bg-background p-2">
               <button
                 className={clsx(
-                  "rounded-full border p-3",
-                  micActive
-                    ? "border-primary bg-primary/10 text-primary shadow-lg shadow-primary/20"
-                    : "border-border text-text-muted hover:text-text",
+                  "relative rounded-full border p-3 transition active:scale-[0.97]",
+                  isRecording
+                    ? "border-danger bg-danger/10 text-danger shadow-lg shadow-danger/30"
+                    : speechInputAvailable && !isSpeaking
+                      ? "border-border text-text-muted hover:text-text"
+                      : "cursor-not-allowed border-border bg-surface-2 text-text-muted/50",
                 )}
                 type="button"
-                onClick={() => setMicActive((value) => !value)}
-                aria-label="Toggle microphone"
+                onClick={handleVoiceToggle}
+                disabled={isSpeaking || !speechInputAvailable}
+                aria-label={
+                  speechInputAvailable
+                    ? "Toggle voice input"
+                    : "Voice input unavailable"
+                }
+                title={
+                  isSpeaking
+                    ? "Wait for AI to finish"
+                    : speechInputAvailable
+                      ? "Toggle voice input"
+                      : "Voice input unavailable — type your answer"
+                }
               >
-                {micActive ? <Mic size={18} /> : <MicOff size={18} />}
+                {isRecording ? (
+                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
+                ) : null}
+                {isRecording ? <Mic size={18} /> : <MicOff size={18} />}
               </button>
               <textarea
+                ref={answerInputRef}
                 className="max-h-36 min-h-12 flex-1 resize-none bg-transparent px-1 py-3 text-sm text-text outline-none placeholder:text-text-muted"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
@@ -309,6 +492,16 @@ export function InterviewPage() {
                 rows={1}
                 aria-label="Candidate answer"
               />
+              {pendingVoiceSubmit ? (
+                <button
+                  className="rounded-input border border-border px-3 py-2 text-xs font-semibold text-text-muted hover:text-text"
+                  type="button"
+                  onClick={cancelVoiceSubmit}
+                  aria-label="Cancel automatic voice answer submission"
+                >
+                  Cancel
+                </button>
+              ) : null}
               <button
                 className="rounded-input bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary-dim"
                 type="submit"
@@ -324,19 +517,40 @@ export function InterviewPage() {
       <div className="no-print fixed bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-4 rounded-full border border-border bg-surface/90 px-4 py-3 shadow-2xl shadow-black/30 backdrop-blur">
         <button
           className={clsx(
-            "rounded-full border p-3",
-            micActive
-              ? "border-primary bg-primary/10 text-primary shadow-lg shadow-primary/30"
-              : "border-border text-text-muted hover:text-text",
+            "relative rounded-full border p-3 transition active:scale-[0.97]",
+            isRecording
+              ? "border-danger bg-danger/10 text-danger shadow-lg shadow-danger/30"
+              : speechInputAvailable && !isSpeaking
+                ? "border-border text-text-muted hover:text-text"
+                : "cursor-not-allowed border-border bg-surface-2 text-text-muted/50",
           )}
           type="button"
-          onClick={() => setMicActive((value) => !value)}
-          aria-label="Toggle microphone"
+          onClick={handleVoiceToggle}
+          disabled={isSpeaking || !speechInputAvailable}
+          aria-label={
+            speechInputAvailable
+              ? "Toggle voice input"
+              : "Voice input unavailable"
+          }
+          title={
+            isSpeaking
+              ? "Wait for AI to finish"
+              : speechInputAvailable
+                ? "Toggle voice input"
+                : "Voice input unavailable — type your answer"
+          }
         >
-          {micActive ? <Mic size={18} /> : <MicOff size={18} />}
+          {isRecording ? (
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
+          ) : null}
+          {isRecording ? <Mic size={18} /> : <MicOff size={18} />}
         </button>
         <span className="rounded-full bg-surface-2 px-4 py-2 text-sm font-medium text-text-muted">
-          Interview in progress...
+          {isRecording
+            ? "Listening..."
+            : isSpeaking
+              ? "AI speaking..."
+              : "Interview in progress..."}
         </span>
         <button
           className="inline-flex items-center gap-2 rounded-full border border-danger/40 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/10"
@@ -375,9 +589,11 @@ export function InterviewPage() {
 function MessageBubble({
   role,
   content,
+  isSpeaking,
 }: {
   role: "ai" | "candidate";
   content: string;
+  isSpeaking?: boolean;
 }) {
   const isAI = role === "ai";
 
@@ -388,9 +604,21 @@ function MessageBubble({
       className={clsx("flex gap-3", isAI ? "justify-start" : "justify-end")}
     >
       {isAI ? (
-        <span className="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-white">
-          AI
-        </span>
+        <div className="flex flex-col items-center gap-2">
+          <span className="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-white">
+            AI
+          </span>
+          {isSpeaking ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+              Speaking
+            </span>
+          ) : null}
+        </div>
       ) : null}
       <div
         className={clsx(
@@ -480,19 +708,13 @@ function TypingIndicator() {
       <span className="grid h-9 w-9 place-items-center rounded-full bg-primary text-white">
         <Bot size={16} />
       </span>
-      <div className="flex gap-1 rounded-card bg-surface-2 px-4 py-3">
-        {[0, 1, 2].map((dot) => (
-          <motion.span
-            animate={{ opacity: [0.25, 1, 0.25], y: [0, -3, 0] }}
-            transition={{
-              duration: 0.9,
-              repeat: Infinity,
-              delay: dot * 0.12,
-            }}
-            className="h-2 w-2 rounded-full bg-text-muted"
-            key={dot}
-          />
-        ))}
+      <div className="flex items-center gap-3 rounded-card bg-surface-2 px-4 py-3">
+        <span className="text-xs font-medium text-text-muted">Thinking...</span>
+        <span className="flex gap-1" aria-label="AI is thinking">
+          <span className="dot h-2 w-2 rounded-full bg-text-muted" />
+          <span className="dot h-2 w-2 rounded-full bg-text-muted" />
+          <span className="dot h-2 w-2 rounded-full bg-text-muted" />
+        </span>
       </div>
     </div>
   );

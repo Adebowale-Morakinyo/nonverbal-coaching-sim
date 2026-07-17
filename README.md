@@ -35,7 +35,16 @@ LLM_MODEL=anthropic/claude-sonnet-4-5
 PORT=8080
 ALLOWED_ORIGINS=http://localhost:5173
 VITE_API_PROXY_TARGET=http://localhost:8080
+
+# Candidate speech-to-text provider: webspeech or elevenlabs
+VITE_STT_PROVIDER=webspeech
+
+# Required for VITE_STT_PROVIDER=elevenlabs; also used for browser TTS
+VITE_ELEVENLABS_API_KEY=
+VITE_ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 ```
+
+`VITE_STT_PROVIDER` defaults to `webspeech` when unset. `VITE_ELEVENLABS_API_KEY` is used directly by the browser for the Phase 1 voice prototype when ElevenLabs STT or TTS is enabled, so treat it as a demo-only key with restricted quota.
 
 ## Running Tests
 

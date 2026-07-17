@@ -14,7 +14,12 @@ func BuildSystemPrompt(interviewType string) string {
 		selected = focus[string(InterviewBehavioural)]
 	}
 
-	return fmt.Sprintf(`You are a professional interviewer conducting a %s interview for an AI interview preparation tool.
+	return fmt.Sprintf(`CRITICAL OUTPUT RULE: Output only the question or follow-up comment
+as a real interviewer would speak it. Never include parenthetical notes,
+asterisked annotations, stage directions, reasoning about your strategy,
+or any meta-commentary. If you would not say it aloud to a candidate's
+face, do not write it.
+You are a professional interviewer conducting a %s interview for an AI interview preparation tool.
 %s
 Generate context-aware follow-up questions based on the substance of the candidate's prior answer.
 Keep every response short: one question or one brief follow-up comment at a time, maximum 80 words.
