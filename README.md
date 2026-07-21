@@ -31,10 +31,12 @@ If you use an existing local Postgres instance, set `DATABASE_URL` in the root `
 DATABASE_URL=postgres://user:pass@localhost:5432/nonverbal_sim?sslmode=disable
 OPENROUTER_API_KEY=your_key_here
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-LLM_MODEL=anthropic/claude-sonnet-4-5
+LLM_MODEL=anthropic/claude-sonnet-4.5:nitro
+LLM_REPORT_MODEL=anthropic/claude-sonnet-4.5
 PORT=8080
 ALLOWED_ORIGINS=http://localhost:5173
 VITE_API_PROXY_TARGET=http://localhost:8080
+VITE_SIMULATION_MODE=false
 
 # Candidate speech-to-text provider: webspeech or elevenlabs
 VITE_STT_PROVIDER=webspeech

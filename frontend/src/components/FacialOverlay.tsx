@@ -6,6 +6,8 @@ type FacialOverlayProps = {
   data: FacialIndicators | null;
 };
 
+const SIM_MODE = import.meta.env.VITE_SIMULATION_MODE === "true";
+
 export function FacialOverlay({ data }: FacialOverlayProps) {
   const [collapsed, setCollapsed] = useState(false);
   const indicators = [
@@ -61,6 +63,11 @@ export function FacialOverlay({ data }: FacialOverlayProps) {
           ))}
         </div>
       )}
+      {SIM_MODE ? (
+        <p className="mt-3 text-[10px] font-semibold text-warning opacity-60">
+          ⚠ SIMULATION
+        </p>
+      ) : null}
     </div>
   );
 }

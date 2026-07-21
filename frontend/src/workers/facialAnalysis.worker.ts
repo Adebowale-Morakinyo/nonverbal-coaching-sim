@@ -8,7 +8,7 @@ export const CONFIG = {
 const MODEL_ASSET_PATH =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const WASM_ASSET_PATH =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm";
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const MODEL_LOAD_TIMEOUT_MS = 10_000;
 const ROLLING_WINDOW_SIZE = 150;
 
@@ -35,17 +35,21 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
 };
 
 async function initialize() {
+  let gpuError = "";
   try {
     faceLandmarker = await loadFaceLandmarker("GPU");
     self.postMessage({ type: "ready" });
   } catch {
+    gpuError = "GPU delegate failed";
     try {
       faceLandmarker = await loadFaceLandmarker("CPU");
       self.postMessage({ type: "ready" });
-    } catch {
+    } catch (error) {
       self.postMessage({
         type: "error",
-        message: "Model failed to load",
+        message: `${gpuError}; CPU fallback failed: ${
+          error instanceof Error ? error.message : "Model failed to load"
+        }`,
       });
     }
   }
@@ -53,7 +57,7 @@ async function initialize() {
 
 async function loadFaceLandmarker(delegate: "GPU" | "CPU") {
   return withTimeout(async () => {
-    const vision = await FilesetResolver.forVisionTasks(WASM_ASSET_PATH);
+    const vision = await FilesetResolver.forVisionTasks(WASM_ASSET_PATH, true);
     return FaceLandmarker.createFromOptions(vision, {
       baseOptions: {
         modelAssetPath: MODEL_ASSET_PATH,
@@ -110,6 +114,10 @@ function analyzeFrame(imageBitmap: ImageBitmap, timestamp: number) {
         eyeContactRatio,
         headStability,
         facialActivity,
+        landmarks: landmarks.map((landmark) => ({
+          x: landmark.x,
+          y: landmark.y,
+        })),
       },
     });
   } catch (error) {

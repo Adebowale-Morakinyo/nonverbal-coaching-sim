@@ -27,9 +27,10 @@ Do not provide a full performance report during the interview.`, interviewType, 
 }
 
 func BuildReportPrompt(interviewType string) string {
-	return BuildSystemPrompt(interviewType) + `
-
-The interview session has ended. Produce only valid JSON in this exact shape:
+	return fmt.Sprintf(`You are an expert interview performance evaluator reviewing a completed %s interview.
+Assess only the candidate's answers from the transcript. Produce only valid JSON.
+Do not include markdown, code fences, prose before the JSON, prose after the JSON, or explanatory text.
+The JSON must match this exact shape:
 {
   "answer_structure": {"score": 1-5, "comment": "..."},
   "reasoning_clarity": {"score": 1-5, "comment": "..."},
@@ -38,5 +39,5 @@ The interview session has ended. Produce only valid JSON in this exact shape:
   "overall_impression": "...",
   "top_strengths": ["...", "..."],
   "top_improvements": ["...", "..."]
-}`
+}`, interviewType)
 }

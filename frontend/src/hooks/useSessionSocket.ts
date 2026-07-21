@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FacialIndicators, SessionTurn } from "../lib/api";
+import {
+  sendTurn as sendTurnRequest,
+  type FacialIndicators,
+  type SessionTurn,
+} from "../lib/api";
 
 export type Message = {
   id: string;
@@ -33,6 +37,7 @@ export function useSessionSocket(
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
+  const pendingTurnRef = useRef(false);
 
   useEffect(() => {
     setMessages(turnsToMessages(initialTurns));
@@ -91,7 +96,9 @@ export function useSessionSocket(
       socket.onclose = () => {
         socketRef.current = null;
         setConnectionStatus("disconnected");
-        setIsAiTyping(false);
+        if (!pendingTurnRef.current) {
+          setIsAiTyping(false);
+        }
 
         if (!closedByEffect && reconnectAttemptsRef.current < 3) {
           reconnectAttemptsRef.current += 1;
@@ -105,7 +112,9 @@ export function useSessionSocket(
       };
 
       socket.onerror = () => {
-        setIsAiTyping(false);
+        if (!pendingTurnRef.current) {
+          setIsAiTyping(false);
+        }
       };
     }
 
@@ -131,31 +140,50 @@ export function useSessionSocket(
     setConnectionRun((value) => value + 1);
   }, []);
 
-  const sendTurn = useCallback((content: string) => {
-    const trimmed = content.trim();
-    if (!trimmed) {
-      return;
-    }
+  const sendTurn = useCallback(
+    (content: string) => {
+      const trimmed = content.trim();
+      if (!trimmed) {
+        return;
+      }
 
-    setMessages((current) => [
-      ...current,
-      {
-        id: `candidate-${crypto.randomUUID()}`,
-        role: "candidate",
-        content: trimmed,
-      },
-    ]);
-    setIsAiTyping(true);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `candidate-${crypto.randomUUID()}`,
+          role: "candidate",
+          content: trimmed,
+        },
+      ]);
+      setLastError(null);
+      setIsAiTyping(true);
+      pendingTurnRef.current = true;
 
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(
-        JSON.stringify({ type: "candidate_turn", content: trimmed }),
-      );
-      return;
-    }
-
-    setIsAiTyping(false);
-  }, []);
+      void sendTurnRequest(sessionId, trimmed)
+        .then((response) => {
+          const id = `ai-${response.turn_index}`;
+          const message = { id, role: "ai" as const, content: response.content };
+          setMessages((current) => [
+            ...current.filter((item) => item.id !== id),
+            message,
+          ]);
+          setLatestAIResponse(message);
+          setLastError(null);
+        })
+        .catch((err) => {
+          setLastError(
+            err instanceof Error
+              ? err.message
+              : "Failed to get interviewer response",
+          );
+        })
+        .finally(() => {
+          pendingTurnRef.current = false;
+          setIsAiTyping(false);
+        });
+    },
+    [sessionId],
+  );
 
   return {
     messages,
@@ -171,7 +199,7 @@ export function useSessionSocket(
 
 function turnsToMessages(turns: SessionTurn[]): Message[] {
   return turns.map((turn) => ({
-    id: String(turn.id),
+    id: `${turn.role}-${turn.id}`,
     role: turn.role,
     content: turn.content,
   }));

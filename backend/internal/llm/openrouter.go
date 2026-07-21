@@ -16,7 +16,7 @@ import (
 
 const (
 	DefaultBaseURL = "https://openrouter.ai/api/v1"
-	DefaultModel   = "anthropic/claude-sonnet-4-5"
+	DefaultModel   = "anthropic/claude-sonnet-4.5"
 )
 
 type Client interface {
@@ -26,24 +26,33 @@ type Client interface {
 }
 
 type OpenRouterClient struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	apiKey      string
+	baseURL     string
+	model       string
+	reportModel string
+	httpClient  *http.Client
 }
 
 func NewOpenRouterClient(apiKey, baseURL, model string) *OpenRouterClient {
+	return NewOpenRouterClientWithReportModel(apiKey, baseURL, model, "")
+}
+
+func NewOpenRouterClientWithReportModel(apiKey, baseURL, model, reportModel string) *OpenRouterClient {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
 	if model == "" {
 		model = DefaultModel
 	}
+	if reportModel == "" {
+		reportModel = model
+	}
 	return &OpenRouterClient{
-		apiKey:     apiKey,
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		model:      model,
-		httpClient: &http.Client{Timeout: 45 * time.Second},
+		apiKey:      apiKey,
+		baseURL:     strings.TrimRight(baseURL, "/"),
+		model:       model,
+		reportModel: reportModel,
+		httpClient:  &http.Client{Timeout: 45 * time.Second},
 	}
 }
 
@@ -52,27 +61,58 @@ func (c *OpenRouterClient) InterviewResponse(ctx context.Context, interviewType 
 }
 
 func (c *OpenRouterClient) VerbalReport(ctx context.Context, interviewType session.InterviewType, turns []session.Turn) (json.RawMessage, error) {
-	content, err := c.Complete(ctx, session.BuildReportPrompt(string(interviewType)), turnsToMessages(turns))
+	content, err := c.completeReport(ctx, session.BuildReportPrompt(string(interviewType)), turnsToMessages(turns))
 	if err != nil {
 		return nil, err
 	}
 
-	var raw json.RawMessage
-	if err := json.Unmarshal([]byte(content), &raw); err != nil {
-		return nil, fmt.Errorf("llm returned invalid report JSON: %w", err)
+	raw, err := parseReportJSON(content)
+	if err == nil {
+		return raw, nil
+	}
+
+	repaired, repairErr := c.completeReport(ctx, buildReportRepairPrompt(), []Message{
+		{Role: "user", Content: content},
+	})
+	if repairErr != nil {
+		return nil, fmt.Errorf("llm returned invalid report JSON: %w; repair failed: %v", err, repairErr)
+	}
+	raw, repairErr = parseReportJSON(repaired)
+	if repairErr != nil {
+		return nil, fmt.Errorf("llm returned invalid report JSON: %w; repair returned invalid JSON: %v", err, repairErr)
 	}
 	return raw, nil
 }
 
 func (c *OpenRouterClient) Complete(ctx context.Context, systemPrompt string, messages []Message) (string, error) {
+	return c.completeWithModel(ctx, c.model, systemPrompt, messages, nil)
+}
+
+func (c *OpenRouterClient) completeReport(ctx context.Context, systemPrompt string, messages []Message) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		content, err := c.completeWithModel(ctx, c.reportModel, systemPrompt, messages, jsonObjectResponseFormat())
+		if err == nil {
+			return content, nil
+		}
+		lastErr = err
+		if !errors.Is(err, errEmptyResponse) {
+			break
+		}
+	}
+	return "", lastErr
+}
+
+func (c *OpenRouterClient) completeWithModel(ctx context.Context, model, systemPrompt string, messages []Message, responseFormat any) (string, error) {
 	if c.apiKey == "" {
 		return "", errors.New("OPENROUTER_API_KEY is required")
 	}
 
 	requestMessages := append([]Message{{Role: "system", Content: systemPrompt}}, messages...)
 	body, err := json.Marshal(chatRequest{
-		Model:    c.model,
-		Messages: requestMessages,
+		Model:          model,
+		Messages:       requestMessages,
+		ResponseFormat: responseFormat,
 	})
 	if err != nil {
 		return "", err
@@ -103,9 +143,67 @@ func (c *OpenRouterClient) Complete(ctx context.Context, systemPrompt string, me
 		return "", err
 	}
 	if len(output.Choices) == 0 || strings.TrimSpace(output.Choices[0].Message.Content) == "" {
-		return "", errors.New("openrouter returned an empty response")
+		return "", errEmptyResponse
 	}
 	return strings.TrimSpace(output.Choices[0].Message.Content), nil
+}
+
+var errEmptyResponse = errors.New("openrouter returned an empty response")
+
+func jsonObjectResponseFormat() map[string]string {
+	return map[string]string{"type": "json_object"}
+}
+
+func parseReportJSON(content string) (json.RawMessage, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, errors.New("empty report response")
+	}
+
+	if raw, err := validateJSONObject(content); err == nil {
+		return raw, nil
+	}
+
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start == -1 || end == -1 || end <= start {
+		return nil, fmt.Errorf("no JSON object found in response starting with %q", firstRune(content))
+	}
+	return validateJSONObject(content[start : end+1])
+}
+
+func validateJSONObject(content string) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+		return nil, err
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func buildReportRepairPrompt() string {
+	return `Convert the user's text into valid JSON only.
+Return exactly one JSON object and nothing else.
+The JSON object must use this exact shape:
+{
+  "answer_structure": {"score": 1-5, "comment": "..."},
+  "reasoning_clarity": {"score": 1-5, "comment": "..."},
+  "use_of_examples": {"score": 1-5, "comment": "..."},
+  "communication_quality": {"score": 1-5, "comment": "..."},
+  "overall_impression": "...",
+  "top_strengths": ["...", "..."],
+  "top_improvements": ["...", "..."]
+}`
+}
+
+func firstRune(value string) string {
+	for _, char := range value {
+		return string(char)
+	}
+	return ""
 }
 
 type Message struct {
@@ -114,8 +212,9 @@ type Message struct {
 }
 
 type chatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
+	Model          string    `json:"model"`
+	Messages       []Message `json:"messages"`
+	ResponseFormat any       `json:"response_format,omitempty"`
 }
 
 type chatResponse struct {

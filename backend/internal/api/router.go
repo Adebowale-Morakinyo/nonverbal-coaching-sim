@@ -322,7 +322,20 @@ func (s *Server) sendInitialQuestion(ctx context.Context, conn *websocket.Conn, 
 		return err
 	}
 	if len(turns) > 0 {
-		return nil
+		lastTurn := turns[len(turns)-1]
+		if lastTurn.Role == session.RoleAI {
+			return conn.WriteJSON(map[string]any{"type": "ai_response", "content": lastTurn.Content, "turn_index": lastTurn.ID})
+		}
+
+		aiResponse, err := s.llm.InterviewResponse(ctx, found.InterviewType, turns)
+		if err != nil {
+			return err
+		}
+		aiTurn, err := s.repo.AddTurn(ctx, sessionID, session.RoleAI, aiResponse)
+		if err != nil {
+			return err
+		}
+		return conn.WriteJSON(map[string]any{"type": "ai_response", "content": aiResponse, "turn_index": aiTurn.ID})
 	}
 
 	aiResponse, err := s.llm.InterviewResponse(ctx, found.InterviewType, nil)

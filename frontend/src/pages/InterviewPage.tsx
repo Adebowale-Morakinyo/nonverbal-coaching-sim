@@ -16,11 +16,13 @@ import {
 } from "react-router-dom";
 import clsx from "clsx";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { FaceMeshOverlay } from "../components/FaceMeshOverlay";
 import { FacialOverlay } from "../components/FacialOverlay";
 import { useCamera } from "../hooks/useCamera";
 import { useElevenLabsSpeech } from "../hooks/useElevenLabsSpeech";
 import { useFacialAnalysis } from "../hooks/useFacialAnalysis";
 import { useSpeechInput } from "../hooks/useSpeechInput";
+import { useSimulatedFacialAnalysis } from "../hooks/useSimulatedFacialAnalysis";
 import { useSessionSocket } from "../hooks/useSessionSocket";
 import { useTimer } from "../hooks/useTimer";
 import {
@@ -31,6 +33,8 @@ import {
   type SessionTurn,
 } from "../lib/api";
 import { formatInterviewType, formatTimer } from "../lib/format";
+
+const SIM_MODE = import.meta.env.VITE_SIMULATION_MODE === "true";
 
 export function InterviewPage() {
   const { id = "" } = useParams();
@@ -86,11 +90,14 @@ export function InterviewPage() {
   }, [id]);
 
   const fullMultimodal = session?.condition === "full_multimodal";
+  const realFacial = useFacialAnalysis(videoRef, !SIM_MODE && fullMultimodal);
+  const simFacial = useSimulatedFacialAnalysis(SIM_MODE);
   const {
     indicators,
+    landmarks: facialLandmarks,
     isReady: facialAnalysisReady,
     error: facialAnalysisError,
-  } = useFacialAnalysis(videoRef, fullMultimodal);
+  } = SIM_MODE ? simFacial : realFacial;
   const {
     messages,
     isAiTyping,
@@ -149,7 +156,7 @@ export function InterviewPage() {
   }, [displayedMessages, isAiTyping]);
 
   useEffect(() => {
-    if (!fullMultimodal || !indicators || !id) {
+    if (SIM_MODE || !fullMultimodal || !indicators || !id) {
       return;
     }
 
@@ -159,6 +166,18 @@ export function InterviewPage() {
 
     return () => window.clearInterval(interval);
   }, [fullMultimodal, id, indicators]);
+
+  useEffect(() => {
+    if (!SIM_MODE) {
+      return;
+    }
+
+    console.warn(
+      "%c[SIMULATION MODE] Facial analysis is simulated. " +
+        "Set VITE_SIMULATION_MODE=false before running evaluation sessions.",
+      "color: #F59E0B; font-weight: bold",
+    );
+  }, []);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -317,16 +336,19 @@ export function InterviewPage() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-background p-4 text-text lg:p-6">
-      {fullMultimodal && !facialAnalysisError ? (
+      {(SIM_MODE || fullMultimodal) && !facialAnalysisError ? (
         <FacialOverlay data={indicators} />
       ) : null}
-      {fullMultimodal && facialAnalysisError ? (
+      {!SIM_MODE && fullMultimodal && facialAnalysisError ? (
         <div
           className="absolute right-6 top-6 z-30 max-w-sm rounded-card border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning shadow-2xl shadow-black/30 backdrop-blur-xl"
           role="status"
           aria-live="polite"
         >
-          Facial analysis unavailable — session continues without overlay
+          <p className="font-semibold">
+            Facial analysis unavailable — session continues without overlay
+          </p>
+          <p className="mt-1 text-xs opacity-80">{facialAnalysisError}</p>
         </div>
       ) : null}
       {voiceToast ? (
@@ -350,6 +372,9 @@ export function InterviewPage() {
               playsInline
               aria-label="Your camera feed"
             />
+            {facialAnalysisReady && facialLandmarks ? (
+              <FaceMeshOverlay landmarks={facialLandmarks} />
+            ) : null}
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(0,0,0,0.35))]" />
             <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-semibold text-text backdrop-blur">
               <span className="h-2 w-2 animate-pulse rounded-full bg-success" />
@@ -371,14 +396,17 @@ export function InterviewPage() {
             </div>
           </div>
 
-          {fullMultimodal ? (
+          {SIM_MODE || fullMultimodal ? (
             <p className="mt-3 text-xs text-text-muted">
-              Facial analysis{" "}
-              {facialAnalysisError
-                ? "unavailable"
-                : facialAnalysisReady
-                  ? "live"
-                  : "loading"}
+              {SIM_MODE
+                ? "Analysis Active"
+                : `Facial analysis ${
+                    facialAnalysisError
+                      ? "unavailable"
+                      : facialAnalysisReady
+                        ? "live"
+                        : "loading"
+                  }`}
             </p>
           ) : null}
 

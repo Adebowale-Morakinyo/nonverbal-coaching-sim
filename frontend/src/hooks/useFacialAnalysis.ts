@@ -1,10 +1,15 @@
 import { RefObject, useEffect, useRef, useState } from "react";
 import FacialAnalysisWorker from "../workers/facialAnalysis.worker?worker";
 import type { FacialIndicators } from "../lib/api";
+import type { FaceLandmarkPoint } from "../components/FaceMeshOverlay";
+
+type FacialIndicatorMessage = FacialIndicators & {
+  landmarks?: FaceLandmarkPoint[];
+};
 
 type WorkerMessage =
   | { type: "ready" }
-  | { type: "indicators"; data: FacialIndicators | null }
+  | { type: "indicators"; data: FacialIndicatorMessage | null }
   | { type: "error"; message: string };
 
 declare global {
@@ -18,6 +23,7 @@ export function useFacialAnalysis(
   enabled: boolean,
 ) {
   const [indicators, setIndicators] = useState<FacialIndicators | null>(null);
+  const [landmarks, setLandmarks] = useState<FaceLandmarkPoint[] | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const readyRef = useRef(false);
@@ -29,6 +35,7 @@ export function useFacialAnalysis(
       readyRef.current = false;
       workerBusyRef.current = false;
       setIndicators(null);
+      setLandmarks(null);
       setIsReady(false);
       setError(null);
       return;
@@ -85,6 +92,8 @@ export function useFacialAnalysis(
         readyRef.current = false;
         setIsReady(false);
         setIndicators(null);
+        setLandmarks(null);
+        console.warn("Facial analysis unavailable:", message.message);
         setError(message.message);
         return;
       }
@@ -94,7 +103,16 @@ export function useFacialAnalysis(
         const now = performance.now();
         if (now - lastStateUpdateRef.current >= 500) {
           lastStateUpdateRef.current = now;
-          setIndicators(message.data);
+          setIndicators(
+            message.data
+              ? {
+                  eyeContactRatio: message.data.eyeContactRatio,
+                  headStability: message.data.headStability,
+                  facialActivity: message.data.facialActivity,
+                }
+              : null,
+          );
+          setLandmarks(message.data?.landmarks ?? null);
         }
       }
     };
@@ -104,6 +122,8 @@ export function useFacialAnalysis(
       readyRef.current = false;
       setIsReady(false);
       setIndicators(null);
+      setLandmarks(null);
+      console.warn("Facial analysis worker failed:", event.message);
       setError(event.message || "Facial analysis worker failed");
     };
 
@@ -119,14 +139,15 @@ export function useFacialAnalysis(
       }
       worker.terminate();
       setIndicators(null);
+      setLandmarks(null);
       setIsReady(false);
       setError(null);
     };
   }, [enabled, videoRef]);
 
   if (!enabled) {
-    return { indicators: null, isReady: false, error: null };
+    return { indicators: null, landmarks: null, isReady: false, error: null };
   }
 
-  return { indicators, isReady, error };
+  return { indicators, landmarks, isReady, error };
 }

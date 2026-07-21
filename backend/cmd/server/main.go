@@ -30,10 +30,11 @@ func main() {
 	defer pool.Close()
 
 	repository := db.NewRepository(pool)
-	llmClient := llm.NewOpenRouterClient(
+	llmClient := llm.NewOpenRouterClientWithReportModel(
 		os.Getenv("OPENROUTER_API_KEY"),
 		getenv("OPENROUTER_BASE_URL", llm.DefaultBaseURL),
 		getenv("LLM_MODEL", llm.DefaultModel),
+		getenv("LLM_REPORT_MODEL", getenv("LLM_MODEL", llm.DefaultModel)),
 	)
 
 	addr := ":" + getenv("PORT", "8080")
